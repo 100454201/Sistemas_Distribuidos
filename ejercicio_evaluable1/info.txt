@@ -1,0 +1,21 @@
+A continuación os indico una serie de puntos a considerar en todos los ejercicios y proyecto:
+
+* Funcionamiento concurrente comunicaciones por parte del servidor (el servidor debe ser concurrente). 
+
+* Tenéis libertad para elegir el mecanismo de concurrencia en el servidor (hilos bajo demanda o "pool" de hilos), pero tenéis que justificar la elección del mismo. 
+
+* Estructura y calidad del código. El código debe estar bien comentado y organizado.
+
+* Tratamiento de errores (funciones con tratamiento de errores y plan de pruebas para detectarlo). 
+
+* Describir en la memoria las batería de pruebas realizada
+
+* Incluir en la memoria una figura con un pseudocódigo o un diagrama de flujo indicando el protocolo de comunicación cliente/servidor. Aquí lo importante es describir cómo se realiza la comunicación, qué datos se envían y qué se reciben, así como lo que sucede cuando se invocan las llamadas al API.
+
+* Introducir mecanismos (mutex, etc.) para evitar condiciones de carrera en el servidor.
+
+* Hay un punto extra para trabajo no contemplado en la memoria: pruebas de rendimiento, consumo de energía, métodos de gestión de datos "exóticos", etc. Es importante si que si completáis esta parte lo indiquéis claramente en la memoria en un apartado titulado "Trabajo extra". 
+
+Aparte de esto:
+
+* Aseguraos que el código compila y funciona bien en guernika (muy importante porque probaré el código allí). 
