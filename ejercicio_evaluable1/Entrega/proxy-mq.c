@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <mqueue.h>
 #include <errno.h>
+#include <time.h>
 #include "claves.h"
 #include "protocolo.h"
 
@@ -185,8 +186,10 @@ int set_value(char *key, char *value1, int N_value2, float *V_value2, struct Paq
  * get_value - Obtiene los valores asociados a una clave
  */
 int get_value(char *key, char *value1, int *N_value2, float *V_value2, struct Paquete *value3) {
-    if (key == NULL || value1 == NULL || N_value2 == NULL || 
-        V_value2 == NULL || value3 == NULL) {
+    if (key == NULL || strlen(key) == 0 || strlen(key) > 255) {
+        return -1;
+    }
+    if (value1 == NULL || N_value2 == NULL || V_value2 == NULL || value3 == NULL) {
         return -1;
     }
     
@@ -252,7 +255,7 @@ int modify_value(char *key, char *value1, int N_value2, float *V_value2, struct 
  * delete_key - Elimina la tupla con la clave especificada
  */
 int delete_key(char *key) {
-    if (key == NULL) {
+    if (key == NULL || strlen(key) == 0 || strlen(key) > 255) {
         return -1;
     }
     
@@ -272,7 +275,7 @@ int delete_key(char *key) {
  * exist - Verifica si existe una tupla con la clave especificada
  */
 int exist(char *key) {
-    if (key == NULL) {
+    if (key == NULL || strlen(key) == 0 || strlen(key) > 255) {
         return -1;
     }
     

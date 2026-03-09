@@ -35,7 +35,7 @@ void separador(const char *titulo) {
     printf("\n%s=== %s ===%s\n", COLOR_INFO, titulo, COLOR_RESET);
 }
 
-int main(int argc, char **argv) {
+int main(void) {
     printf("%s====================================%s\n", COLOR_INFO, COLOR_RESET);
     printf("%s  PLAN DE PRUEBAS - PARTE A         %s\n", COLOR_INFO, COLOR_RESET);
     printf("%s====================================%s\n\n", COLOR_INFO, COLOR_RESET);
@@ -166,22 +166,29 @@ int main(int argc, char **argv) {
     res = delete_key("no_existe");
     mostrar_resultado("delete_key(clave inexistente) debe fallar", -1, res);
     
-    /* ===== PRUEBA 12: Límites - cadena larga ===== */
+    /* ===== PRUEBA 12: Límites - cadenas largas ===== */
     separador("PRUEBA 12: Límites - cadenas largas");
-    
+
+    /* Clave de exactamente 256 chars (excede el límite de 255) */
     char clave_larga[260];
     memset(clave_larga, 'A', 256);
     clave_larga[256] = '\0';
-    
     res = set_value(clave_larga, "valor", 1, v2_1, v3_1);
-    mostrar_resultado("set_value(clave >255 chars) debe fallar", -1, res);
-    
+    mostrar_resultado("set_value(clave 256 chars) debe fallar", -1, res);
+
+    /* value1 de exactamente 256 chars (excede el límite de 255) */
     char valor1_largo[260];
     memset(valor1_largo, 'B', 256);
     valor1_largo[256] = '\0';
-    
     res = set_value("clave_ok", valor1_largo, 1, v2_1, v3_1);
-    mostrar_resultado("set_value(value1 >255 chars) debe fallar", -1, res);
+    mostrar_resultado("set_value(value1 256 chars) debe fallar", -1, res);
+
+    /* Clave de exactamente 255 chars (en el límite, debe funcionar) */
+    char clave_255[256];
+    memset(clave_255, 'C', 255);
+    clave_255[255] = '\0';
+    res = set_value(clave_255, "valor_limite", 1, v2_1, v3_1);
+    mostrar_resultado("set_value(clave exactamente 255 chars) debe funcionar", 0, res);
     
     /* ===== PRUEBA 13: Vector con tamaño máximo ===== */
     separador("PRUEBA 13: Vector de tamaño máximo (32)");

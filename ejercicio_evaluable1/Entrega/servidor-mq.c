@@ -125,7 +125,7 @@ void* procesar_peticion(void* arg) {
 /**
  * Función principal del servidor
  */
-int main(int argc, char** argv) {
+int main(void) {
     struct mq_attr atributos;
     Peticion peticion;
     
