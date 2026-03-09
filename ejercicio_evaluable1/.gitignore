@@ -1,0 +1,19 @@
+# Archivos objeto
+*.o
+
+# Bibliotecas dinámicas
+*.so
+
+# Ejecutables
+servidor_mq
+app-cliente
+app-cliente-mq
+
+# Colas de mensajes residuales (por si acaso)
+/dev/mqueue/cola_*
+
+# Archivos de editor
+.vscode/
+*.swp
+*.swo
+*~
