@@ -49,6 +49,28 @@ static int leer_linea(int fd, char *buf, int maxlen) {
     return n;
 }
 
+    /*
+     * enviar_todo: garantiza el envio completo de len bytes.
+     * Devuelve 0 en exito, -1 en error.
+     */
+    static int enviar_todo(int fd, const char *data, size_t len) {
+        size_t enviados = 0;
+        while (enviados < len) {
+            ssize_t r = send(fd, data + enviados, len - enviados, 0);
+            if (r < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return -1;
+            }
+            if (r == 0) {
+                return -1;
+            }
+            enviados += (size_t)r;
+        }
+        return 0;
+    }
+
 /*
  * enviar_linea: envia una cadena seguida de '\n' por el socket.
  * Devuelve 0 en exito, -1 en error.
@@ -56,7 +78,8 @@ static int leer_linea(int fd, char *buf, int maxlen) {
 static int enviar_linea(int fd, const char *msg) {
     char buf[MAX_LINE];
     int len = snprintf(buf, sizeof(buf), "%s\n", msg);
-    if (send(fd, buf, len, 0) < 0) return -1;
+        if (len < 0 || len >= (int)sizeof(buf)) return -1;
+        if (enviar_todo(fd, buf, (size_t)len) < 0) return -1;
     return 0;
 }
 
@@ -84,12 +107,23 @@ static void manejar_set_value(int fd) {
     if (leer_linea(fd, z_str,      sizeof(z_str))      <= 0) return;
 
     int N = atoi(n_str);
+        if (N < 1 || N > 32) {
+            enviar_linea(fd, "-1");
+            return;
+        }
+
     float V[32];
+        int parseados = 0;
     char *token = strtok(floats_str, " ");
-    for (int i = 0; i < N && token != NULL; i++) {
-        V[i] = atof(token);
+        while (parseados < N && token != NULL) {
+            V[parseados] = atof(token);
+            parseados++;
         token = strtok(NULL, " ");
     }
+        if (parseados != N) {
+            enviar_linea(fd, "-1");
+            return;
+        }
 
     struct Paquete p;
     p.x = atoi(x_str);
@@ -157,12 +191,23 @@ static void manejar_modify_value(int fd) {
     if (leer_linea(fd, z_str,      sizeof(z_str))      <= 0) return;
 
     int N = atoi(n_str);
+        if (N < 1 || N > 32) {
+            enviar_linea(fd, "-1");
+            return;
+        }
+
     float V[32];
+        int parseados = 0;
     char *token = strtok(floats_str, " ");
-    for (int i = 0; i < N && token != NULL; i++) {
-        V[i] = atof(token);
+        while (parseados < N && token != NULL) {
+            V[parseados] = atof(token);
+            parseados++;
         token = strtok(NULL, " ");
     }
+        if (parseados != N) {
+            enviar_linea(fd, "-1");
+            return;
+        }
 
     struct Paquete p;
     p.x = atoi(x_str);

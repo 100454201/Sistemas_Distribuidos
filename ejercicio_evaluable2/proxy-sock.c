@@ -48,6 +48,28 @@ static int leer_linea(int fd, char *buf, int maxlen) {
     return n;
 }
 
+    /*
+     * enviar_todo: garantiza el envio completo de len bytes.
+     * Devuelve 0 en exito, -1 en error.
+     */
+    static int enviar_todo(int fd, const char *data, size_t len) {
+        size_t enviados = 0;
+        while (enviados < len) {
+            ssize_t r = send(fd, data + enviados, len - enviados, 0);
+            if (r < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return -1;
+            }
+            if (r == 0) {
+                return -1;
+            }
+            enviados += (size_t)r;
+        }
+        return 0;
+    }
+
 /*
  * enviar_linea: envia una cadena seguida de '\n' por el socket.
  * Devuelve 0 en exito, -1 en error.
@@ -55,7 +77,36 @@ static int leer_linea(int fd, char *buf, int maxlen) {
 static int enviar_linea(int fd, const char *msg) {
     char buf[MAX_LINE];
     int len = snprintf(buf, sizeof(buf), "%s\n", msg);
-    if (send(fd, buf, len, 0) < 0) return -1;
+        if (len < 0 || len >= (int)sizeof(buf)) return -1;
+        if (enviar_todo(fd, buf, (size_t)len) < 0) return -1;
+    return 0;
+}
+
+/*
+ * construir_lista_floats: serializa N floats en una linea separada por espacios.
+ * Devuelve 0 en exito, -1 si el buffer no es suficiente.
+ */
+static int construir_lista_floats(char *dest, size_t dest_size, const float *values, int N) {
+    size_t usado = 0;
+
+    if (dest == NULL || values == NULL || dest_size == 0) {
+        return -1;
+    }
+
+    dest[0] = '\0';
+
+    for (int i = 0; i < N; i++) {
+        int escritos = snprintf(dest + usado, dest_size - usado,
+                                (i < N - 1) ? "%f " : "%f", values[i]);
+        if (escritos < 0) {
+            return -1;
+        }
+        if ((size_t)escritos >= dest_size - usado) {
+            return -1;
+        }
+        usado += (size_t)escritos;
+    }
+
     return 0;
 }
 
@@ -132,7 +183,7 @@ int destroy(void) {
 int set_value(char *key, char *value1, int N_value2,
               float *V_value2, struct Paquete value3) {
     /* Validaciones locales */
-    if (key    == NULL || strlen(key)    > 255) return -1;
+    if (key    == NULL || strlen(key) == 0 || strlen(key) > 255) return -1;
     if (value1 == NULL || strlen(value1) > 255) return -1;
     if (N_value2 < 1 || N_value2 > 32)          return -1;
     if (V_value2 == NULL)                        return -1;
@@ -152,10 +203,9 @@ int set_value(char *key, char *value1, int N_value2,
 
     /* Vector de floats en una sola linea separados por espacios */
     char floats_str[MAX_LINE];
-    int offset = 0;
-    for (int i = 0; i < N_value2; i++) {
-        offset += snprintf(floats_str + offset, sizeof(floats_str) - offset,
-                           i < N_value2 - 1 ? "%f " : "%f", V_value2[i]);
+    if (construir_lista_floats(floats_str, sizeof(floats_str), V_value2, N_value2) < 0) {
+        close(fd);
+        return -2;
     }
     if (enviar_linea(fd, floats_str) < 0) { close(fd); return -2; }
 
@@ -201,15 +251,19 @@ int get_value(char *key, char *value1, int *N_value2,
         char n_str[16];
         if (leer_linea(fd, n_str, sizeof(n_str)) <= 0) { close(fd); return -2; }
         *N_value2 = atoi(n_str);
+        if (*N_value2 < 1 || *N_value2 > 32) { close(fd); return -2; }
 
         /* Leer vector de floats */
         char floats_str[MAX_LINE];
         if (leer_linea(fd, floats_str, sizeof(floats_str)) <= 0) { close(fd); return -2; }
         char *token = strtok(floats_str, " ");
-        for (int i = 0; i < *N_value2 && token != NULL; i++) {
-            V_value2[i] = atof(token);
+        int parseados = 0;
+        while (parseados < *N_value2 && token != NULL) {
+            V_value2[parseados] = atof(token);
+            parseados++;
             token = strtok(NULL, " ");
         }
+        if (parseados != *N_value2) { close(fd); return -2; }
 
         /* Leer paquete x, y, z */
         char x_str[16], y_str[16], z_str[16];
@@ -228,7 +282,7 @@ int get_value(char *key, char *value1, int *N_value2,
 int modify_value(char *key, char *value1, int N_value2,
                  float *V_value2, struct Paquete value3) {
     /* Validaciones locales */
-    if (key    == NULL || strlen(key)    > 255) return -1;
+    if (key    == NULL || strlen(key) == 0 || strlen(key) > 255) return -1;
     if (value1 == NULL || strlen(value1) > 255) return -1;
     if (N_value2 < 1 || N_value2 > 32)          return -1;
     if (V_value2 == NULL)                        return -1;
@@ -245,10 +299,9 @@ int modify_value(char *key, char *value1, int N_value2,
     if (enviar_linea(fd, n_str) < 0) { close(fd); return -2; }
 
     char floats_str[MAX_LINE];
-    int offset = 0;
-    for (int i = 0; i < N_value2; i++) {
-        offset += snprintf(floats_str + offset, sizeof(floats_str) - offset,
-                           i < N_value2 - 1 ? "%f " : "%f", V_value2[i]);
+    if (construir_lista_floats(floats_str, sizeof(floats_str), V_value2, N_value2) < 0) {
+        close(fd);
+        return -2;
     }
     if (enviar_linea(fd, floats_str) < 0) { close(fd); return -2; }
 
