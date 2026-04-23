@@ -1,11 +1,6 @@
 /*
  * clavesRPC_server.c - Implementacion del servidor RPC
  * Sistemas Distribuidos - Ejercicio Evaluable 3
- *
- * Implementa las funciones del servicio de tuplas invocando
- * las funciones de libclaves.so.
- * El codigo de comunicacion RPC lo gestiona automaticamente
- * el codigo generado por rpcgen (_svc.c, _xdr.c).
  */
 
 #include "clavesRPC.h"
@@ -39,7 +34,6 @@ set_value_1_svc(SetModifyArgs arg1, int *result, struct svc_req *rqstp)
     p.z = arg1.value3.z;
 
     *result = set_value(arg1.key, arg1.value1, N, V, p);
-
     printf("[Servidor RPC] SET_VALUE resultado: %d\n", *result);
     return TRUE;
 }
@@ -52,22 +46,37 @@ get_value_1_svc(char *arg1, GetValueResult *result, struct svc_req *rqstp)
 
     memset(result, 0, sizeof(GetValueResult));
 
-    static char  value1_buf[256];
-    static float v_buf[32];
-    int          N  = 0;
+    /* Reservar memoria dinamica — XDR la liberara correctamente */
+    char  *value1_buf = (char *)malloc(256);
+    float *v_buf      = (float *)malloc(32 * sizeof(float));
+
+    if (value1_buf == NULL || v_buf == NULL) {
+        free(value1_buf);
+        free(v_buf);
+        result->resultado = -1;
+        return TRUE;
+    }
+
+    int N = 0;
     struct Paquete p = {0, 0, 0};
 
     result->resultado = get_value(arg1, value1_buf, &N, v_buf, &p);
 
     if (result->resultado == 0) {
-        result->value1               = value1_buf;
-        result->N_value2             = N;
+        result->value1                   = value1_buf;
+        result->N_value2                 = N;
         result->V_value2.VectorFloat_len = N;
         result->V_value2.VectorFloat_val = v_buf;
         result->value3.x = p.x;
         result->value3.y = p.y;
         result->value3.z = p.z;
-    }
+    } else {
+    /* En caso de error, XDR necesita strings validos (no NULL) */
+    value1_buf[0] = '\0';
+    result->value1                   = value1_buf;
+    result->V_value2.VectorFloat_len = 0;
+    result->V_value2.VectorFloat_val = v_buf;
+}
 
     printf("[Servidor RPC] GET_VALUE resultado: %d\n", result->resultado);
     return TRUE;
@@ -88,7 +97,6 @@ modify_value_1_svc(SetModifyArgs arg1, int *result, struct svc_req *rqstp)
     p.z = arg1.value3.z;
 
     *result = modify_value(arg1.key, arg1.value1, N, V, p);
-
     printf("[Servidor RPC] MODIFY_VALUE resultado: %d\n", *result);
     return TRUE;
 }
