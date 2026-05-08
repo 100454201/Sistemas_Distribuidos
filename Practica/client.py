@@ -1,6 +1,8 @@
 from enum import Enum
 import argparse
 import socket
+import json
+import urllib.request
 
 
 class client :
@@ -16,9 +18,11 @@ class client :
     # ****************** ATTRIBUTES ******************
     _server = None
     _port = -1
+    _web_port = 8080            # puerto del servicio web de normalizacion local
     _connected_user = None      # usuario actualmente conectado
     _listen_sock    = None      # socket de escucha de mensajes
     _listen_thread  = None      # hilo que escucha mensajes
+    _usuarios_conectados = {}   # {nombre: (ip, puerto)} actualizado con USERS
 
     # ******************** HELPERS *******************
 
@@ -52,16 +56,34 @@ class client :
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((client._server, client._port))
         return sock
-   
+
+    @staticmethod
+    def _normalizar_mensaje(mensaje):
+        """Envia el mensaje al servicio web local para eliminar espacios repetidos.
+        Si el servicio no esta disponible, devuelve el mensaje sin modificar."""
+        try:
+            url   = f'http://localhost:{client._web_port}/normalize'
+            datos = json.dumps({'message': mensaje}).encode('utf-8')
+            req   = urllib.request.Request(
+                url, data=datos,
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                resultado = json.loads(resp.read().decode('utf-8'))
+                return resultado.get('message', mensaje)
+        except Exception:
+            return mensaje  # si el servicio web no responde, usar mensaje original
+
     @staticmethod
     def _hilo_escucha(listen_sock, user):
-        """Hilo que escucha mensajes entrantes del servidor."""
+        """Hilo que escucha mensajes y peticiones de fichero entrantes."""
         while True:
             try:
                 conn, _ = listen_sock.accept()
                 operacion = client._recibir_cadena(conn)
 
                 if operacion == "SEND_MESSAGE":
+                    # Mensaje de texto simple del servidor
                     remitente = client._recibir_cadena(conn)
                     msg_id    = client._recibir_cadena(conn)
                     texto     = client._recibir_cadena(conn)
@@ -72,10 +94,44 @@ class client :
                     print("c> ", end='', flush=True)
 
                 elif operacion == "SEND_MESS_ACK":
+                    # Confirmacion de entrega de mensaje simple
                     msg_id = client._recibir_cadena(conn)
                     conn.close()
                     print(f"\nc> SEND MESSAGE {msg_id} OK")
                     print("c> ", end='', flush=True)
+
+                elif operacion == "SEND_MESSAGE_ATTACH":
+                    # Mensaje con fichero adjunto del servidor
+                    remitente = client._recibir_cadena(conn)
+                    msg_id    = client._recibir_cadena(conn)
+                    texto     = client._recibir_cadena(conn)
+                    fichero   = client._recibir_cadena(conn)
+                    conn.close()
+                    print(f"\nc> MESSAGE {msg_id} FROM {remitente}")
+                    print(f"  {texto}")
+                    print("  END")
+                    print(f"  FILE {fichero}")
+                    print("c> ", end='', flush=True)
+
+                elif operacion == "SEND_MESS_ATTACH_ACK":
+                    # Confirmacion de entrega de mensaje con fichero adjunto
+                    msg_id  = client._recibir_cadena(conn)
+                    fichero = client._recibir_cadena(conn)
+                    conn.close()
+                    print(f"\nc> SENDATTACH MESSAGE {msg_id} {fichero} OK")
+                    print("c> ", end='', flush=True)
+
+                elif operacion == "GET_FILE":
+                    # Peticion de fichero de otro cliente (transferencia P2P)
+                    _solicitante = client._recibir_cadena(conn)
+                    nombre_fich  = client._recibir_cadena(conn)
+                    try:
+                        with open(nombre_fich, 'rb') as f:
+                            datos = f.read()
+                        conn.sendall(datos)
+                    except Exception:
+                        pass  # si el fichero no existe, cerramos sin enviar nada
+                    conn.close()
 
                 else:
                     conn.close()
@@ -86,7 +142,7 @@ class client :
     # ******************** METHODS *******************
     # *
     # * @param user - User name to register in the system
-    # * 
+    # *
     # * @return OK if successful
     # * @return USER_ERROR if the user is already registered
     # * @return ERROR if another error occurred
@@ -109,18 +165,18 @@ class client :
                 print("c> REGISTER FAIL")
                 return client.RC.ERROR
 
-        except Exception as e:
+        except Exception:
             print("c> REGISTER FAIL")
             return client.RC.ERROR
 
     # *
-    # 	 * @param user - User name to unregister from the system
-    # 	 * 
-    # 	 * @return OK if successful
-    # 	 * @return USER_ERROR if the user does not exist
-    # 	 * @return ERROR if another error occurred
+    # * @param user - User name to unregister from the system
+    # *
+    # * @return OK if successful
+    # * @return USER_ERROR if the user does not exist
+    # * @return ERROR if another error occurred
     @staticmethod
-    def  unregister(user) :
+    def unregister(user) :
         try:
             sock = client._conectar()
             client._enviar_cadena(sock, "UNREGISTER")
@@ -138,25 +194,25 @@ class client :
                 print("c> UNREGISTER FAIL")
                 return client.RC.ERROR
 
-        except Exception as e:
+        except Exception:
             print("c> UNREGISTER FAIL")
             return client.RC.ERROR
+
     # *
     # * @param user - User name to connect to the system
-    # * 
+    # *
     # * @return OK if successful
     # * @return USER_ERROR if the user does not exist or if it is already connected
     # * @return ERROR if another error occurred
     @staticmethod
     def connect(user):
         try:
-            # 1. Buscar puerto libre
+            # Crear socket de escucha en puerto libre asignado por el SO
             listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            listen_sock.bind(('', 0))  # puerto 0 = el SO asigna uno libre
+            listen_sock.bind(('', 0))
             puerto_escucha = listen_sock.getsockname()[1]
             listen_sock.listen(10)
 
-            # 2. Enviar solicitud de conexion al servidor
             sock = client._conectar()
             client._enviar_cadena(sock, "CONNECT")
             client._enviar_cadena(sock, user)
@@ -165,7 +221,6 @@ class client :
             sock.close()
 
             if resp == 0:
-                # 3. Guardar estado y arrancar hilo de escucha
                 client._connected_user = user
                 client._listen_sock    = listen_sock
 
@@ -193,54 +248,15 @@ class client :
                 print("c> CONNECT FAIL")
                 return client.RC.ERROR
 
-        except Exception as e:
+        except Exception:
             print("c> CONNECT FAIL")
             return client.RC.ERROR
 
     # *
-    # * @param user - User name to connect to the system
-    # *
-    # * @return OK if successful
-    # * @return USER_ERROR if the user does not exist or is already connected
-    # * @return ERROR if another error occurred
-    @staticmethod
-    def  users() :
-        try:
-            sock = client._conectar()
-            client._enviar_cadena(sock, "USERS")
-            client._enviar_cadena(sock, client._connected_user)
-            resp = client._recibir_byte(sock)
-
-            if resp == 0:
-                count = int(client._recibir_cadena(sock))
-                nombres = []
-                for _ in range(count):
-                    nombres.append(client._recibir_cadena(sock))
-                sock.close()
-                print(f"c> CONNECTED USERS ({count} users connected) OK")
-                for nombre in nombres:
-                    print(f"  {nombre}")
-                return client.RC.OK
-
-            elif resp == 1:
-                sock.close()
-                print("c> CONNECTED USERS FAIL, USER IS NOT CONNECTED")
-                return client.RC.USER_ERROR
-            else:
-                sock.close()
-                print("c> CONNECTED USERS FAIL")
-                return client.RC.ERROR
-
-        except Exception as e:
-            print("c> CONNECTED USERS FAIL")
-            return client.RC.ERROR
-
-
-    # *
     # * @param user - User name to disconnect from the system
-    # * 
+    # *
     # * @return OK if successful
-    # * @return USER_ERROR if the user does not exist
+    # * @return USER_ERROR if the user does not exist or is not connected
     # * @return ERROR if another error occurred
     @staticmethod
     def disconnect(user):
@@ -252,12 +268,12 @@ class client :
             sock.close()
 
             if resp == 0:
-                # Parar el hilo de escucha cerrando el socket
                 if client._listen_sock is not None:
                     client._listen_sock.close()
                     client._listen_sock   = None
                     client._listen_thread = None
-                client._connected_user = None
+                client._connected_user      = None
+                client._usuarios_conectados = {}
                 print("c> DISCONNECT OK")
                 return client.RC.OK
 
@@ -271,25 +287,71 @@ class client :
                 print("c> DISCONNECT FAIL")
                 return client.RC.ERROR
 
-        except Exception as e:
-            # Aunque falle, parar el hilo igualmente
+        except Exception:
             if client._listen_sock is not None:
                 client._listen_sock.close()
                 client._listen_sock   = None
                 client._listen_thread = None
-            client._connected_user = None
+            client._connected_user      = None
+            client._usuarios_conectados = {}
             print("c> DISCONNECT FAIL")
             return client.RC.ERROR
+
+    # *
+    # * @return OK if successful
+    # * @return USER_ERROR if the requesting user is not connected
+    # * @return ERROR if another error occurred
+    @staticmethod
+    def users() :
+        try:
+            sock = client._conectar()
+            client._enviar_cadena(sock, "USERS")
+            client._enviar_cadena(sock, client._connected_user)
+            resp = client._recibir_byte(sock)
+
+            if resp == 0:
+                count    = int(client._recibir_cadena(sock))
+                nueva_tabla = {}
+                entradas = []
+                for _ in range(count):
+                    entrada = client._recibir_cadena(sock)
+                    entradas.append(entrada)
+                    # Formato del servidor: "nombre :: IP :: puerto"
+                    partes = entrada.split(' :: ')
+                    if len(partes) == 3:
+                        nueva_tabla[partes[0]] = (partes[1], partes[2])
+                sock.close()
+                client._usuarios_conectados = nueva_tabla
+                print(f"c> CONNECTED USERS ({count} users connected) OK")
+                for entrada in entradas:
+                    print(f"  {entrada}")
+                return client.RC.OK
+
+            elif resp == 1:
+                sock.close()
+                print("c> CONNECTED USERS FAIL, USER IS NOT CONNECTED")
+                return client.RC.USER_ERROR
+            else:
+                sock.close()
+                print("c> CONNECTED USERS FAIL")
+                return client.RC.ERROR
+
+        except Exception:
+            print("c> CONNECTED USERS FAIL")
+            return client.RC.ERROR
+
     # *
     # * @param user    - Receiver user name
     # * @param message - Message to be sent
-    # * 
+    # *
     # * @return OK if the server had successfully delivered the message
-    # * @return USER_ERROR if the user is not connected (the message is queued for delivery)
+    # * @return USER_ERROR if the user is not connected (message queued)
     # * @return ERROR the user does not exist or another error occurred
     @staticmethod
-    def  send(user,  message) :
+    def send(user, message) :
         try:
+            # Normalizar el mensaje a traves del servicio web local
+            message = client._normalizar_mensaje(message)
             sock = client._conectar()
             client._enviar_cadena(sock, "SEND")
             client._enviar_cadena(sock, client._connected_user)
@@ -311,25 +373,97 @@ class client :
                 print("c> SEND FAIL")
                 return client.RC.ERROR
 
-        except Exception as e:
+        except Exception:
             print("c> SEND FAIL")
             return client.RC.ERROR
 
     # *
     # * @param user    - Receiver user name
-    # * @param file    - file  to be sent
+    # * @param file    - File name to attach
     # * @param message - Message to be sent
-    # * 
+    # *
     # * @return OK if the server had successfully delivered the message
-    # * @return USER_ERROR if the user is not connected (the message is queued for delivery)
+    # * @return USER_ERROR if the user is not connected (message queued)
     # * @return ERROR the user does not exist or another error occurred
     @staticmethod
-    def  sendAttach(user,  file,  message) :
-        #  Write your code here
-        return client.RC.ERROR
+    def sendAttach(user, file, message) :
+        try:
+            # Normalizar el mensaje a traves del servicio web local
+            message = client._normalizar_mensaje(message)
+            sock = client._conectar()
+            client._enviar_cadena(sock, "SENDATTACH")
+            client._enviar_cadena(sock, client._connected_user)
+            client._enviar_cadena(sock, user)
+            client._enviar_cadena(sock, message)
+            client._enviar_cadena(sock, file)
+            resp = client._recibir_byte(sock)
+
+            if resp == 0:
+                msg_id = client._recibir_cadena(sock)
+                sock.close()
+                print(f"c> SENDATTACH OK - MESSAGE {msg_id}")
+                return client.RC.OK
+            elif resp == 1:
+                sock.close()
+                print("c> SENDATTACH FAIL, USER DOES NOT EXIST")
+                return client.RC.USER_ERROR
+            else:
+                sock.close()
+                print("c> SENDATTACH FAIL")
+                return client.RC.ERROR
+
+        except Exception:
+            print("c> SENDATTACH FAIL")
+            return client.RC.ERROR
 
     # *
-    # **
+    # * @param user          - Owner of the remote file
+    # * @param fileName      - Remote file name to transfer
+    # * @param localFileName - Local path where the file will be saved
+    # *
+    # * @return OK if the file was transferred successfully
+    # * @return USER_ERROR if the user is not connected
+    # * @return ERROR if another error occurred
+    @staticmethod
+    def getfile(user, fileName, localFileName):
+        try:
+            # Buscar IP y puerto del usuario; refrescar si no esta en la tabla
+            if user not in client._usuarios_conectados:
+                client.users()
+            if user not in client._usuarios_conectados:
+                print("c> FILE TRANSFER FAILED, user not connected.")
+                return client.RC.USER_ERROR
+
+            ip, puerto = client._usuarios_conectados[user]
+
+            # Conectar directamente al hilo de escucha del cliente remoto
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((ip, int(puerto)))
+
+            client._enviar_cadena(sock, "GET_FILE")
+            client._enviar_cadena(sock, client._connected_user)
+            client._enviar_cadena(sock, fileName)
+
+            # Recibir el contenido del fichero y guardarlo localmente
+            contenido = b''
+            while True:
+                datos = sock.recv(4096)
+                if not datos:
+                    break
+                contenido += datos
+            sock.close()
+
+            with open(localFileName, 'wb') as f:
+                f.write(contenido)
+
+            print("c> FILE TRANSFER OK")
+            return client.RC.OK
+
+        except Exception:
+            print("c> FILE TRANSFER FAILED")
+            return client.RC.ERROR
+
+    # *
     # * @brief Command interpreter for the client. It calls the protocol functions.
     @staticmethod
     def shell():
@@ -370,11 +504,10 @@ class client :
                         if (len(line) == 1) :
                             client.users()
                         else :
-                            print("Syntax error. Usage: CONNECTED_USERS <userName>")
+                            print("Syntax error. Usage: USERS")
 
                     elif(line[0]=="SEND") :
                         if (len(line) >= 3) :
-                            #  Remove first two words
                             message = ' '.join(line[2:])
                             client.send(line[1], message)
                         else :
@@ -382,11 +515,16 @@ class client :
 
                     elif(line[0]=="SENDATTACH") :
                         if (len(line) >= 4) :
-                            #  Remove first two words
                             message = ' '.join(line[3:])
                             client.sendAttach(line[1], line[2], message)
                         else :
                             print("Syntax error. Usage: SENDATTACH <userName> <filename> <message>")
+
+                    elif(line[0]=="GETFILE") :
+                        if (len(line) == 4) :
+                            client.getfile(line[1], line[2], line[3])
+                        else :
+                            print("Syntax error. Usage: GETFILE <userName> <fileName> <localFileName>")
 
                     elif(line[0]=="QUIT") :
                         if (len(line) == 1) :
@@ -404,14 +542,14 @@ class client :
     def usage() :
         print("Usage: python3 client.py -s <server> -p <port>")
 
-
     # *
     # * @brief Parses program execution arguments
     @staticmethod
-    def  parseArguments(argv) :
+    def parseArguments(argv) :
         parser = argparse.ArgumentParser()
         parser.add_argument('-s', type=str, required=True, help='Server IP')
         parser.add_argument('-p', type=int, required=True, help='Server Port')
+        parser.add_argument('-w', type=int, default=8080,  help='Web service port')
         args = parser.parse_args()
 
         if (args.s is None):
@@ -419,14 +557,14 @@ class client :
             return False
 
         if ((args.p < 1024) or (args.p > 65535)):
-            parser.error("Error: Port must be in the range 1024 <= port <= 65535");
-            return False;
-        
-        client._server = args.s
-        client._port = args.p
+            parser.error("Error: Port must be in the range 1024 <= port <= 65535")
+            return False
+
+        client._server   = args.s
+        client._port     = args.p
+        client._web_port = args.w
 
         return True
-
 
     # ******************** MAIN *********************
     @staticmethod
@@ -435,10 +573,9 @@ class client :
             client.usage()
             return
 
-        #  Write code here
         client.shell()
         print("+++ FINISHED +++")
-    
+
 
 if __name__=="__main__":
     client.main([])
