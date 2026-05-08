@@ -60,7 +60,28 @@ void* procesar_peticion(void* arg) {
             
         case OP_SET_VALUE:
             printf("[Servidor] Procesando SET_VALUE (key=%s)\n", pet->key);
-            resp.resultado = set_value(pet->key, pet->value1, pet->N_value2, 
+            resp.resultado = set_value(pet->key, pet->value1, pet->N    /* Abrir cola del cliente para enviar respuesta */
+    char nombre_cola_cliente[64];
+    snprintf(nombre_cola_cliente, sizeof(nombre_cola_cliente), 
+             "%s%d", COLA_CLIENTE_PREFIX, pet->pid_cliente);
+    
+    mqd_t cola_cliente = mq_open(nombre_cola_cliente, O_WRONLY);
+    if (cola_cliente == (mqd_t)-1) {
+        perror("[Servidor] Error al abrir cola del cliente");
+        free(datos);
+        return NULL;
+    }
+    
+    /* Enviar respuesta */
+    if (mq_send(cola_cliente, (char*)&resp, sizeof(Respuesta), 0) == -1) {
+        perror("[Servidor] Error al enviar respuesta");
+    } else {
+        printf("[Servidor] Respuesta enviada (resultado=%d)\n", resp.resultado);
+    }
+    
+    mq_close(cola_cliente);
+    free(datos);
+    return NULL;_value2, 
                                       pet->V_value2, pet->value3);
             break;
             

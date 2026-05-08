@@ -34,27 +34,7 @@ typedef float VectorFloat<MAX_N_VALUE2>;
 /* Argumentos para set_value y modify_value */
 struct SetModifyArgs {
     string      key<MAX_KEY_LEN>;
-    string      value1<MAX_VALUE1_LEN>;
-    int         N_value2;
-    VectorFloat V_value2;
-    PaqueteRPC  value3;
-};
-
-/* ------------------------------------------------------------------ */
-/* Estructuras de respuesta                                            */
-/* ------------------------------------------------------------------ */
-
-/* Respuesta de get_value: incluye resultado y datos si exito */
-struct GetValueResult {
-    int         resultado;
-    string      value1<MAX_VALUE1_LEN>;
-    int         N_value2;
-    VectorFloat V_value2;
-    PaqueteRPC  value3;
-};
-
-/* ------------------------------------------------------------------ */
-/* Definicion del programa RPC                                         */
+Definicion del programa RPC                                         */
 /* ------------------------------------------------------------------ */
 
 program CLAVES_PROG {
