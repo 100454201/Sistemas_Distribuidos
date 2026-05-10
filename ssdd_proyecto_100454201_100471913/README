@@ -1,0 +1,85 @@
+================================================================
+SISTEMAS DISTRIBUIDOS - PRACTICA SERVICIO DE MENSAJERIA
+Universidad Carlos III de Madrid
+Curso 2025-2026
+
+Autores:
+  Juan Luis del Valle - NIA: 100454201
+  David Sierra       - NIA: 100471913
+================================================================
+
+REQUISITOS PREVIOS
+------------------
+- GCC con soporte C99 o superior
+- rpcbind instalado y en ejecucion
+- libtirpc-dev instalado
+- Python 3.8 o superior
+
+  sudo apt install libtirpc-dev rpcbind
+
+COMPILACION
+-----------
+Desde el directorio de la practica:
+
+  make all
+
+Para limpiar los ficheros generados:
+
+  make clean
+
+EJECUCION
+---------
+
+1. MODO BASICO (solo parte 1, sin RPC ni servicio web)
+
+  Terminal 1 - Servidor:
+    ./server -p <puerto>
+
+  Terminal 2 - Cliente:
+    python3 client.py -s <IP_servidor> -p <puerto>
+
+2. MODO COMPLETO (partes 1 y 2)
+
+  Terminal 1 - Servidor RPC:
+    sudo systemctl restart rpcbind
+    ./log_server
+
+  Terminal 2 - Servidor de mensajeria:
+    export LOG_RPC_IP=<IP_servidor_RPC>
+    ./server -p <puerto>
+
+  Terminal 3 - Servicio web (maquina del cliente):
+    python3 web_service.py -p <puerto_web>
+
+  Terminal 4 - Cliente:
+    python3 client.py -s <IP_servidor> -p <puerto> -w <puerto_web>
+
+COMANDOS DEL CLIENTE
+--------------------
+  REGISTER <userName>                        - Registrar usuario
+  UNREGISTER <userName>                      - Dar de baja usuario
+  CONNECT <userName>                         - Conectarse al sistema
+  DISCONNECT <userName>                      - Desconectarse del sistema
+  USERS                                      - Listar usuarios conectados
+  SEND <userName> <message>                  - Enviar mensaje
+  SENDATTACH <userName> <fileName> <message> - Enviar mensaje con fichero
+  GETFILE <userName> <fileName> <localFile>  - Transferir fichero
+  QUIT                                       - Salir
+
+VARIABLES DE ENTORNO
+--------------------
+  LOG_RPC_IP  - IP del servidor RPC de log (opcional)
+                Si no se define, el servidor funciona sin RPC.
+
+  Ejemplo:
+    export LOG_RPC_IP=localhost
+
+NOTAS
+-----
+  - El servidor termina con Ctrl+C (SIGINT).
+  - El servicio web debe ejecutarse en la misma maquina que el cliente.
+  - Los nombres de fichero en SENDATTACH deben ser rutas absolutas.
+    Ejemplo: /tmp/fichero.txt
+  - Si el servicio web no esta disponible, los mensajes se envian
+    sin normalizar.
+================================================================
